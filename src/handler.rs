@@ -97,8 +97,9 @@ async fn handle_inner(
 
     match upstream_sock.connect(&upstream_addr.into()) {
         Ok(()) => {}
-        Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {}
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        #[cfg(unix)]
+        Err(e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {}
         Err(e) => {
             let _ = cmd_tx.send(SnifferCommand::Deregister(Deregistration { conn_id }));
             return Err(HandlerError::Connect(e));

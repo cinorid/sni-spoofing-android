@@ -9,6 +9,7 @@ use crate::error::SnifferError;
 
 pub struct WinDivertBackend {
     handle: WinDivert<NetworkLayer>,
+    recv_buf: Vec<u8>,
 }
 
 impl WinDivertBackend {
@@ -42,7 +43,10 @@ impl WinDivertBackend {
         ).map_err(|e| SnifferError::SocketOpen(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
 
         info!("WinDivert handle opened");
-        Ok(WinDivertBackend { handle })
+        Ok(WinDivertBackend {
+            handle,
+            recv_buf: vec![0u8; 65536],
+        })
     }
 }
 
@@ -52,7 +56,7 @@ impl RawBackend for WinDivertBackend {
     fn skip_checksum_on_send(&self) -> bool { false }
 
     fn recv_frame(&mut self, buf: &mut [u8]) -> Result<usize, SnifferError> {
-        let packet = self.handle.recv()
+        let packet = self.handle.recv(&mut self.recv_buf)
             .map_err(|e| SnifferError::Recv(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
 
         let data = &packet.data;
@@ -66,9 +70,9 @@ impl RawBackend for WinDivertBackend {
     }
 
     fn send_frame(&mut self, frame: &[u8]) -> Result<(), SnifferError> {
-        let mut packet = WinDivertPacket::<NetworkLayer>::new(frame.to_vec());
+        let mut packet = unsafe { WinDivertPacket::<NetworkLayer>::new(frame.to_vec()) };
         packet.address.set_outbound(true);
-        packet.recalculate_checksums(Default::default());
+        let _ = packet.recalculate_checksums(Default::default());
         self.handle.send(&packet)
             .map_err(|e| SnifferError::Inject(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
         Ok(())
